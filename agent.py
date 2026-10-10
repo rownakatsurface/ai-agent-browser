@@ -1,49 +1,52 @@
+"""Core agent: intent handling plus a local LLM (Ollama) fallback."""
+
 import requests
+
 import memory
+from config import ACTION_PREFIX, MODEL_NAME, OLLAMA_URL
 from prompt import SYSTEM_PROMPT
+from sites import resolve_url
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "phi"
 
-# 🗺️ Intent → URL map (agent brain)
-SITES = {
-    "youtube": "https://www.youtube.com",
-    "google": "https://www.google.com",
-    "github": "https://github.com",
-    "facebook": "https://www.facebook.com",
-    "instagram": "https://www.instagram.com"
-}
+def handle_open_intent(user_input):
+    """Handle "open <site>" commands locally, without hitting the model.
 
-def run_agent(user_input):
+    Returns an ACTION string when the site is known, otherwise None.
+    """
     text = user_input.lower().strip()
+    if not text.startswith("open "):
+        return None
 
-    # store user message
-    memory.add("User", user_input)
+    url = resolve_url(text[len("open "):])
+    if url is None:
+        return f"I don't know how to open {text[len('open '):].strip()}"
+    return f"{ACTION_PREFIX}{url}"
 
-    # 🔥 INTENT-BASED ACTION HANDLER (NO LINKS TO USER)
-    if text.startswith("open "):
-        site_name = text.replace("open ", "").strip()
 
-        if site_name in SITES:
-            return f"ACTION:OPEN_URL:{SITES[site_name]}"
-        else:
-            return f"I don't know how to open {site_name}"
-
-    # 🧠 Build conversation context from memory
-    context = ""
-    for msg in memory.get():
-        context += f'{msg["role"]}: {msg["content"]}\n'
-
+def query_model():
+    """Ask the local Ollama model, using conversation memory as context."""
     payload = {
         "model": MODEL_NAME,
-        "prompt": f"{SYSTEM_PROMPT}\n{context}Agent:",
-        "stream": False
+        "prompt": f"{SYSTEM_PROMPT}\n{memory.as_context()}\nAgent:",
+        "stream": False,
     }
+    response = requests.post(OLLAMA_URL, json=payload, timeout=30)
+    response.raise_for_status()
+    return response.json().get("response", "").strip()
 
-    response = requests.post(OLLAMA_URL, json=payload).json()
-    reply = response.get("response", "").strip()
 
-    # store agent reply
+def run_agent(user_input):
+    """Process a user message and return the agent's reply."""
+    memory.add("User", user_input)
+
+    action = handle_open_intent(user_input)
+    if action is not None:
+        # Only remember the action if it was understood; unknown sites
+        # should not pollute the conversational context.
+        if action.startswith(ACTION_PREFIX):
+            memory.add("Agent", action)
+        return action
+
+    reply = query_model()
     memory.add("Agent", reply)
-
     return reply

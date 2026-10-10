@@ -1,22 +1,32 @@
+"""Speech input/output helpers (offline via Sphinx + pyttsx3)."""
+
 import speech_recognition as sr
 import pyttsx3
 
-engine = pyttsx3.init()
-engine.setProperty("rate", 160)
+from config import TTS_RATE
+
+_engine = pyttsx3.init()
+_engine.setProperty("rate", TTS_RATE)
+
 
 def speak(text):
-    engine.say(text)
-    engine.runAndWait()
+    _engine.say(text)
+    _engine.runAndWait()
+
 
 def listen():
-    r = sr.Recognizer()
+    """Capture one utterance from the microphone; return "" on failure."""
+    recognizer = sr.Recognizer()
     with sr.Microphone() as source:
         print("🎙️ Listening...")
-        audio = r.listen(source)
+        audio = recognizer.listen(source)
 
     try:
-        text = r.recognize_sphinx(audio)  # OFFLINE
-        print("You:", text)
-        return text
-    except:
+        text = recognizer.recognize_sphinx(audio)  # OFFLINE
+    except sr.UnknownValueError:
         return ""
+    except sr.RequestError:
+        return ""
+
+    print("You:", text)
+    return text

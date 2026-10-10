@@ -1,7 +1,12 @@
-from flask import Flask, request, jsonify
+"""Flask HTTP interface for the AI agent."""
+
+from flask import Flask, jsonify, request
+
 from agent import run_agent
+from config import SERVER_HOST, SERVER_PORT
 
 app = Flask(__name__)
+
 
 @app.route("/", methods=["GET"])
 def home():
@@ -11,16 +16,17 @@ def home():
     <p>Use <code>/ask</code> endpoint with POST.</p>
     """
 
+
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     query = data.get("query", "").strip()
 
     if not query:
         return jsonify({"error": "Query is empty"}), 400
 
-    answer = run_agent(query)
-    return jsonify({"response": answer})
+    return jsonify({"response": run_agent(query)})
+
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000)
+    app.run(host=SERVER_HOST, port=SERVER_PORT)
